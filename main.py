@@ -6,8 +6,6 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont
-import arabic_reshaper
-from bidi.algorithm import get_display
 
 # ---------- Settings ----------
 BOT_TOKEN = os.environ["BOT_TOKEN"]
@@ -36,9 +34,19 @@ def download_font():
                 f.write(r.content)
 
 
-def ar(text):
-    reshaped = arabic_reshaper.reshape(text)
-    return get_display(reshaped)
+def draw_rtl(d, xy, text, font, fill, anchor="mm"):
+    """Draw Arabic/mixed text correctly.
+    Tries Pillow's native RTL shaping (raqm) first; falls back to
+    arabic_reshaper + python-bidi if raqm isn't available."""
+    try:
+        d.text(xy, text, font=font, fill=fill, anchor=anchor,
+               direction="rtl", language="ar")
+    except (ImportError, TypeError, ValueError):
+        import arabic_reshaper
+        from bidi.algorithm import get_display
+        reshaped = arabic_reshaper.reshape(text)
+        bidi_text = get_display(reshaped)
+        d.text(xy, bidi_text, font=font, fill=fill, anchor=anchor)
 
 
 def clean_number(raw):
@@ -82,13 +90,14 @@ def build_image(prices):
     f_badge = ImageFont.truetype(FONT_BOLD_PATH, 50)
 
     def text_rtl(xy, text, font, fill, anchor="mm"):
-        d.text(xy, ar(text), font=font, fill=fill, anchor=anchor)
+        draw_rtl(d, xy, text, font, fill, anchor)
 
     def rounded(box, radius=30, width=3):
         d.rounded_rectangle(box, radius=radius, outline=GOLD, width=width)
 
     margin = 40
 
+    # ---- Top bar: date / time ----
     top_box = (margin, 40, W - margin, 190)
     rounded(top_box)
     now = datetime.now(ZoneInfo("Africa/Cairo"))
@@ -101,6 +110,7 @@ def build_image(prices):
     text_rtl((W - margin - 260, 115), date_str, f_sub, GOLD_LIGHT)
     text_rtl((margin + 260, 115), time_str, f_sub, GOLD_LIGHT)
 
+    # ---- Title ----
     title_box = (margin, 230, W - margin, 430)
     rounded(title_box)
     text_rtl((W // 2, 300), "أسعار الذهب الآن", f_title, GOLD_LIGHT)
@@ -113,6 +123,7 @@ def build_image(prices):
     d.rectangle((flag_x0, flag_y0 + stripe_h, flag_x0 + flag_w, flag_y0 + 2 * stripe_h), fill=(255, 255, 255))
     d.rectangle((flag_x0, flag_y0 + 2 * stripe_h, flag_x0 + flag_w, flag_y0 + flag_h), fill=(0, 0, 0))
 
+    # ---- Karat rows ----
     row_h = 190
     gap = 24
     row_y = 470
@@ -138,6 +149,7 @@ def build_image(prices):
         price_cx = (margin + 200 + (W - margin - 340)) // 2
         text_rtl((price_cx, cy), f"{prices[k]} جنيه", f_price, GOLD_LIGHT)
 
+    # ---- Gold pound row ----
     pound_y0 = row_y + 3 * (row_h + gap) + 10
     pound_y1 = pound_y0 + 210
     rounded((margin, pound_y0, W - margin, pound_y1))
@@ -145,6 +157,7 @@ def build_image(prices):
     text_rtl((W // 2, pcy - 45), "الجنيه الذهب", f_label, GOLD_LIGHT)
     text_rtl((W // 2, pcy + 40), f"{prices['pound']} جنيه", f_price, WHITE)
 
+    # ---- Footer ----
     footer_y0 = pound_y1 + 40
     footer_y1 = footer_y0 + 130
     rounded((margin, footer_y0, W - margin, footer_y1))
@@ -166,7 +179,6 @@ def send_to_telegram(img):
         files={"photo": ("gold_price.png", buf, "image/png")},
         timeout=60,
     )
-    print("Telegram response:", resp.status_code, resp.text)
     resp.raise_for_status()
     result = resp.json()
     if not result.get("ok"):
