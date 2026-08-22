@@ -166,6 +166,7 @@ def send_to_telegram(img):
         files={"photo": ("gold_price.png", buf, "image/png")},
         timeout=60,
     )
+    print("Telegram response:", resp.status_code, resp.text)
     resp.raise_for_status()
     result = resp.json()
     if not result.get("ok"):
