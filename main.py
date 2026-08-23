@@ -51,7 +51,15 @@ def draw_rtl(d, xy, text, font, fill, anchor="mm"):
 
 def clean_number(raw):
     digits = re.sub(r"[^\d]", "", raw)
-    return f"{int(digits):,}"
+    # use Arabic comma (present in Arabic fonts) instead of "," which some
+    # Arabic font subsets don't include
+    return f"{int(digits):,}".replace(",", "،")
+
+
+ARABIC_MONTHS = {
+    1: "يناير", 2: "فبراير", 3: "مارس", 4: "أبريل", 5: "مايو", 6: "يونيو",
+    7: "يوليو", 8: "أغسطس", 9: "سبتمبر", 10: "أكتوبر", 11: "نوفمبر", 12: "ديسمبر",
+}
 
 
 def fetch_prices():
@@ -101,7 +109,7 @@ def build_image(prices):
     top_box = (margin, 40, W - margin, 190)
     rounded(top_box)
     now = datetime.now(ZoneInfo("Africa/Cairo"))
-    date_str = now.strftime("%Y/%m/%d")
+    date_str = f"{now.day} {ARABIC_MONTHS[now.month]} {now.year}"
     hour12 = now.strftime("%I:%M")
     ampm = "م" if now.strftime("%p") == "PM" else "ص"
     time_str = f"{hour12} {ampm}"
@@ -127,7 +135,7 @@ def build_image(prices):
     row_h = 190
     gap = 24
     row_y = 470
-    karats = [("24", "99.9"), ("21", "87.5"), ("18", "75.0")]
+    karats = [("24", "99،9"), ("21", "87،5"), ("18", "75،0")]
 
     for i, (k, purity) in enumerate(karats):
         y0 = row_y + i * (row_h + gap)
