@@ -35,9 +35,6 @@ def download_font():
 
 
 def draw_rtl(d, xy, text, font, fill, anchor="mm"):
-    """Draw Arabic/mixed text correctly.
-    Tries Pillow's native RTL shaping (raqm) first; falls back to
-    arabic_reshaper + python-bidi if raqm isn't available."""
     try:
         d.text(xy, text, font=font, fill=fill, anchor=anchor,
                direction="rtl", language="ar")
@@ -51,8 +48,6 @@ def draw_rtl(d, xy, text, font, fill, anchor="mm"):
 
 def clean_number(raw):
     digits = re.sub(r"[^\d]", "", raw)
-    # use Arabic comma (present in Arabic fonts) instead of "," which some
-    # Arabic font subsets don't include
     return f"{int(digits):,}".replace(",", "،")
 
 
@@ -95,6 +90,7 @@ def build_image(prices):
     f_label = ImageFont.truetype(FONT_BOLD_PATH, 46)
     f_price = ImageFont.truetype(FONT_BOLD_PATH, 66)
     f_small = ImageFont.truetype(FONT_REGULAR_PATH, 34)
+    f_label_small = ImageFont.truetype(FONT_BOLD_PATH, 34)
     f_badge = ImageFont.truetype(FONT_BOLD_PATH, 50)
 
     def text_rtl(xy, text, font, fill, anchor="mm"):
@@ -105,12 +101,11 @@ def build_image(prices):
 
     margin = 40
 
-    # ---- Top bar: date / time ----
     top_box = (margin, 40, W - margin, 190)
     rounded(top_box)
     now = datetime.now(ZoneInfo("Africa/Cairo"))
     date_str = f"{now.day} {ARABIC_MONTHS[now.month]} {now.year}"
-    hour12 = now.strftime("%I:%M")
+    hour12 = now.strftime("%I:%M").replace(":", "،")
     ampm = "م" if now.strftime("%p") == "PM" else "ص"
     time_str = f"{hour12} {ampm}"
 
@@ -118,7 +113,6 @@ def build_image(prices):
     text_rtl((W - margin - 260, 115), date_str, f_sub, GOLD_LIGHT)
     text_rtl((margin + 260, 115), time_str, f_sub, GOLD_LIGHT)
 
-    # ---- Title ----
     title_box = (margin, 230, W - margin, 430)
     rounded(title_box)
     text_rtl((W // 2, 300), "أسعار الذهب الآن", f_title, GOLD_LIGHT)
@@ -131,7 +125,6 @@ def build_image(prices):
     d.rectangle((flag_x0, flag_y0 + stripe_h, flag_x0 + flag_w, flag_y0 + 2 * stripe_h), fill=(255, 255, 255))
     d.rectangle((flag_x0, flag_y0 + 2 * stripe_h, flag_x0 + flag_w, flag_y0 + flag_h), fill=(0, 0, 0))
 
-    # ---- Karat rows ----
     row_h = 190
     gap = 24
     row_y = 470
@@ -150,14 +143,13 @@ def build_image(prices):
         d.text((badge_cx, cy), k, font=f_badge, fill=(20, 15, 5), anchor="mm")
 
         text_rtl((W - margin - 160, cy - 30), f"عيار {k}", f_label, WHITE)
-        text_rtl((W - margin - 160, cy + 30), f"نقاء {purity}%", f_small, GOLD)
+        text_rtl((W - margin - 160, cy + 30), f"نقاء {purity}%", f_label_small, GOLD)
 
         d.line([(W - margin - 320, y0 + 25), (W - margin - 320, y1 - 25)], fill=GOLD, width=2)
 
         price_cx = (margin + 200 + (W - margin - 340)) // 2
         text_rtl((price_cx, cy), f"{prices[k]} جنيه", f_price, GOLD_LIGHT)
 
-    # ---- Gold pound row ----
     pound_y0 = row_y + 3 * (row_h + gap) + 10
     pound_y1 = pound_y0 + 210
     rounded((margin, pound_y0, W - margin, pound_y1))
@@ -165,7 +157,6 @@ def build_image(prices):
     text_rtl((W // 2, pcy - 45), "الجنيه الذهب", f_label, GOLD_LIGHT)
     text_rtl((W // 2, pcy + 40), f"{prices['pound']} جنيه", f_price, WHITE)
 
-    # ---- Footer ----
     footer_y0 = pound_y1 + 40
     footer_y1 = footer_y0 + 130
     rounded((margin, footer_y0, W - margin, footer_y1))
