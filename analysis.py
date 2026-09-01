@@ -45,7 +45,7 @@ def get_ai_analysis(gram24, gram21, gram18, usd_rate):
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
 
     try:
-        resp = requests.post(url, json=payload, timeout=30)
+        resp = requests.post(url, json=payload, timeout=60)
         resp.raise_for_status()
         data = resp.json()
         text = data["candidates"][0]["content"]["parts"][0]["text"]
