@@ -13,10 +13,10 @@ def fetch_gold_price_usd():
 
 
 def fetch_usd_to_egp():
-    headers = {"User-Agent": "Mozilla/5.0"}
-    resp = requests.get("https://api.exchangerate.fun/latest?base=USD", headers=headers, timeout=30)
+    resp = requests.get("https://open.er-api.com/v6/latest/USD", timeout=30)
     resp.raise_for_status()
     return resp.json()["rates"]["EGP"]
+
 
 def calculate_prices(gold_usd, egp_rate):
     ounce_egp = gold_usd * egp_rate
