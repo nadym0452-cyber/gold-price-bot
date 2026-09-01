@@ -33,10 +33,13 @@ def get_ai_analysis(gram24, gram21, gram18, usd_rate):
         f"أنت محلل أسواق مالية محترف متخصص في سوق الذهب. "
         f"سعر جرام الذهب عيار 24 دلوقتي هو {gram24} جنيه، عيار 21 هو {gram21} جنيه، وعيار 18 هو {gram18} جنيه. "
         f"سعر الدولار مقابل الجنيه هو {usd_rate}. "
-        f"اكتب تحليل سوقي احترافي وموضوعي من 3 اسطر بالعامية المصرية البسيطة يوصف حالة السوق الحالية فقط: "
-        f"هل هناك ضغط شرائي او بيعي، وتأثير حركة الدولار على الذهب. "
+        f"اكتب 3 جمل قصيرة منفصلة بالعامية المصرية البسيطة، كل جملة توصف نقطة مختلفة، "
+        f"وافصل بين كل جملة والتانية بالرمز |||  بدون أي ترقيم أو عناوين قبلها:\n"
+        f"1) جملة عن حالة السوق المحلي وضغط الشراء أو البيع الحالي\n"
+        f"2) جملة عن تأثير حركة سعر الدولار على تسعير الذهب\n"
+        f"3) جملة عن الوضع الفني العام وحالة التوازن بين العرض والطلب\n"
         f"ممنوع منعا باتا استخدام اي عبارة تحث على الشراء او البيع او تصف الوضع بأنه فرصة. "
-        f"اكتفِ بوصف الحالة الفنية والسوقية كمراقب محايد تماما."
+        f"اكتفِ بوصف الحالة كمراقب محايد تماما."
     )
 
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
@@ -45,23 +48,30 @@ def get_ai_analysis(gram24, gram21, gram18, usd_rate):
         resp = requests.post(url, json=payload, timeout=30)
         resp.raise_for_status()
         data = resp.json()
-        return data["candidates"][0]["content"]["parts"][0]["text"]
+        text = data["candidates"][0]["content"]["parts"][0]["text"]
+        parts = [p.strip() for p in text.split("|||")]
+        while len(parts) < 3:
+            parts.append("لا تتوفر بيانات كافية حاليا.")
+        return parts[0], parts[1], parts[2]
     except Exception as e:
-        return f"تعذر توليد التحليل حاليا ({e})"
+        err = f"تعذر توليد التحليل حاليا ({e})"
+        return err, err, err
 
 
 def send_analysis_message(gram24, gram21, gram18, usd_rate):
-    analysis = get_ai_analysis(gram24, gram21, gram18, usd_rate)
+    local_market, dollar_effect, technical = get_ai_analysis(gram24, gram21, gram18, usd_rate)
 
     message = (
         f"💰 أسعار الذهب اليوم\n"
         f"━━━━━━━━━━━━━━\n\n"
-        f"عيار 24: {gram24} جنيه\n"
-        f"عيار 21: {gram21} جنيه\n"
-        f"عيار 18: {gram18} جنيه\n\n"
+        f"⚡عيار (24) ⬅️ {gram24} جنيه\n\n"
+        f"⚡عيار (21) ⬅️ {gram21} جنيه\n\n"
+        f"⚡عيار (18) ⬅️ {gram18} جنيه\n\n"
         f"━━━━━━━━━━━━━━\n"
-        f"📊 تحليل السوق\n\n"
-        f"{analysis}\n\n"
+        f"📊 تحليل السوق ⬇️\n\n"
+        f"🌐 السوق المحلي ⬅️ {local_market}\n\n"
+        f"💵 حركة سعر الدولار ⬅️ {dollar_effect}\n\n"
+        f"📝 الوضع الفني ⬅️ {technical}\n\n"
         f"━━━━━━━━━━━━━━\n"
         f"⚠️ هذا وصف لحالة السوق فقط وليس توصية بالشراء أو البيع"
     )
