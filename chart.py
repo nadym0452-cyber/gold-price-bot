@@ -24,7 +24,7 @@ def build_candles(history, hours=6):
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
     df = df[df.index >= cutoff]
 
-    candles = df["price"].resample("15min").ohlc()
+    candles = df["price"].resample("1h").ohlc()
     candles = candles.dropna()
     candles.columns = ["Open", "High", "Low", "Close"]
     return candles
