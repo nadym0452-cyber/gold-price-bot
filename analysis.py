@@ -1,4 +1,5 @@
 import os
+import time
 import requests
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
@@ -44,18 +45,22 @@ def get_ai_analysis(gram24, gram21, gram18, usd_rate):
 
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
 
-    try:
-        resp = requests.post(url, json=payload, timeout=60)
-        resp.raise_for_status()
-        data = resp.json()
-        text = data["candidates"][0]["content"]["parts"][0]["text"]
-        parts = [p.strip() for p in text.split("|||")]
-        while len(parts) < 3:
-            parts.append("لا تتوفر بيانات كافية حاليا.")
-        return parts[0], parts[1], parts[2]
-    except Exception as e:
-        err = f"تعذر توليد التحليل حاليا ({e})"
-        return err, err, err
+    for attempt in range(10):
+        try:
+            resp = requests.post(url, json=payload, timeout=90)
+            resp.raise_for_status()
+            data = resp.json()
+            text = data["candidates"][0]["content"]["parts"][0]["text"]
+            parts = [p.strip() for p in text.split("|||")]
+            while len(parts) < 3:
+                parts.append("لا تتوفر بيانات كافية حاليا.")
+            return parts[0], parts[1], parts[2]
+        except Exception:
+            if attempt < 9:
+                time.sleep(5)
+
+    err = "تعذر توليد التحليل حاليا بسبب بطء الاتصال، سيتم المحاولة تلقائيا في التحديث القادم."
+    return err, err, err
 
 
 def send_analysis_message(gram24, gram21, gram18, usd_rate):
