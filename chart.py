@@ -31,32 +31,56 @@ def build_candles(history, hours=6):
 
 
 def draw_chart(candles):
+    last_price = candles["Close"].iloc[-1]
+    first_price = candles["Open"].iloc[0]
+    change = last_price - first_price
+    change_pct = (change / first_price) * 100
+    sign = "+" if change >= 0 else ""
+    color_hex = "#0ECB81" if change >= 0 else "#F6465D"
+
     mc = mpf.make_marketcolors(
         up="#0ECB81",
         down="#F6465D",
         edge="inherit",
         wick="inherit",
+        volume="inherit",
     )
     style = mpf.make_mpf_style(
         marketcolors=mc,
-        facecolor="#161A25",
-        figcolor="#161A25",
-        gridcolor="#2B2F3A",
-        gridstyle="--",
+        facecolor="#0B0E11",
+        figcolor="#0B0E11",
+        edgecolor="#0B0E11",
+        gridcolor="#1E2329",
+        gridstyle="-",
+        gridaxis="horizontal",
         y_on_right=True,
-        rc={"font.size": 10, "axes.labelcolor": "white",
-            "xtick.color": "white", "ytick.color": "white",
-            "text.color": "white"},
+        rc={
+            "font.size": 11,
+            "axes.labelcolor": "#848E9C",
+            "xtick.color": "#848E9C",
+            "ytick.color": "#848E9C",
+            "text.color": "#EAECEF",
+            "axes.edgecolor": "#1E2329",
+        },
     )
 
-    mpf.plot(
+    title = (
+        f"\nGOLD/EGP        {last_price:,.2f}  "
+        f"{sign}{change:,.2f}  ({sign}{change_pct:.2f}%)"
+    )
+
+    fig, axlist = mpf.plot(
         candles,
         type="candle",
         style=style,
-        title="\nGold Price - Last 6 Hours",
+        title=title,
         ylabel="EGP / Gram",
-        savefig=dict(fname=CHART_FILE, dpi=150, bbox_inches="tight"),
+        figsize=(11, 6.5),
+        tight_layout=True,
+        returnfig=True,
     )
+
+    fig.savefig(CHART_FILE, dpi=170, facecolor="#0B0E11", bbox_inches="tight")
 
 
 def send_chart():
