@@ -2,13 +2,23 @@ import os
 import json
 import requests
 import pandas as pd
-import mplfinance as mpf
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+from matplotlib.patches import Rectangle
 from datetime import datetime, timezone, timedelta
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]
 HISTORY_FILE = "price_history.json"
 CHART_FILE = "gold_chart.png"
+
+BG = "#0B0E11"
+GRID = "#1E2329"
+TEXT_MAIN = "#EAECEF"
+TEXT_MUTED = "#848E9C"
+GREEN = "#0ECB81"
+RED = "#F6465D"
+TREND_COLOR = "#F0B90B"
 
 
 def load_history():
@@ -36,51 +46,75 @@ def draw_chart(candles):
     change = last_price - first_price
     change_pct = (change / first_price) * 100
     sign = "+" if change >= 0 else ""
-    color_hex = "#0ECB81" if change >= 0 else "#F6465D"
+    header_color = GREEN if change >= 0 else RED
 
-    mc = mpf.make_marketcolors(
-        up="#0ECB81",
-        down="#F6465D",
-        edge="inherit",
-        wick="inherit",
-        volume="inherit",
-    )
-    style = mpf.make_mpf_style(
-        marketcolors=mc,
-        facecolor="#0B0E11",
-        figcolor="#0B0E11",
-        edgecolor="#0B0E11",
-        gridcolor="#1E2329",
-        gridstyle="-",
-        gridaxis="horizontal",
-        y_on_right=True,
-        rc={
-            "font.size": 11,
-            "axes.labelcolor": "#848E9C",
-            "xtick.color": "#848E9C",
-            "ytick.color": "#848E9C",
-            "text.color": "#EAECEF",
-            "axes.edgecolor": "#1E2329",
-        },
-    )
+    high_val = candles["High"].max()
+    low_val = candles["Low"].min()
+    high_time = candles["High"].idxmax()
+    low_time = candles["Low"].idxmin()
 
-    title = (
-        f"\nGOLD/EGP        {last_price:,.2f}  "
-        f"{sign}{change:,.2f}  ({sign}{change_pct:.2f}%)"
-    )
+    fig, ax = plt.subplots(figsize=(11, 6.5), dpi=170)
+    fig.patch.set_facecolor(BG)
+    ax.set_facecolor(BG)
 
-    fig, axlist = mpf.plot(
-        candles,
-        type="candle",
-        style=style,
-        title=title,
-        ylabel="EGP / Gram",
-        figsize=(11, 6.5),
-        tight_layout=True,
-        returnfig=True,
-    )
+    x = mdates.date2num(candles.index.to_pydatetime())
+    width = (x[1] - x[0]) * 0.55 if len(x) > 1 else 0.02
 
-    fig.savefig(CHART_FILE, dpi=170, facecolor="#0B0E11", bbox_inches="tight")
+    for xi, (_, row) in zip(x, candles.iterrows()):
+        color = GREEN if row["Close"] >= row["Open"] else RED
+        ax.plot([xi, xi], [row["Low"], row["High"]], color=color, linewidth=1.3, zorder=2)
+        body_low = min(row["Open"], row["Close"])
+        body_high = max(row["Open"], row["Close"])
+        height = max(body_high - body_low, (high_val - low_val) * 0.004)
+        rect = Rectangle(
+            (xi - width / 2, body_low), width, height,
+            facecolor=color, edgecolor=color, zorder=3,
+        )
+        ax.add_patch(rect)
+
+    trend = candles["Close"].rolling(2, min_periods=1).mean()
+    ax.plot(x, trend.values, color=TREND_COLOR, linewidth=1.6,
+            linestyle="-", alpha=0.85, zorder=4, label="Trend")
+
+    ax.scatter([mdates.date2num(high_time)], [high_val], s=55, color=GREEN,
+               edgecolor=BG, linewidth=1.5, zorder=5)
+    ax.annotate(f"High  {high_val:,.0f}", (mdates.date2num(high_time), high_val),
+                textcoords="offset points", xytext=(0, 12), ha="center",
+                fontsize=10, color=GREEN, fontweight="bold")
+
+    ax.scatter([mdates.date2num(low_time)], [low_val], s=55, color=RED,
+               edgecolor=BG, linewidth=1.5, zorder=5)
+    ax.annotate(f"Low  {low_val:,.0f}", (mdates.date2num(low_time), low_val),
+                textcoords="offset points", xytext=(0, -18), ha="center",
+                fontsize=10, color=RED, fontweight="bold")
+
+    ax.grid(axis="y", color=GRID, linewidth=0.8, zorder=0)
+    ax.set_axisbelow(True)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    ax.tick_params(colors=TEXT_MUTED, labelsize=10)
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
+    ax.yaxis.tick_right()
+    ax.set_ylabel("EGP / Gram", color=TEXT_MUTED, fontsize=11)
+    ax.yaxis.set_label_position("right")
+
+    pad = (high_val - low_val) * 0.15
+    ax.set_ylim(low_val - pad, high_val + pad)
+
+    fig.text(0.06, 0.94, "GOLD / EGP", fontsize=15, color=TEXT_MAIN,
+              fontweight="bold", va="top")
+    fig.text(0.06, 0.885,
+              f"{last_price:,.2f}   {sign}{change:,.2f}  ({sign}{change_pct:.2f}%)",
+              fontsize=13, color=header_color, va="top", fontweight="bold")
+
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    fig.text(0.94, 0.03, f"Last update: {now_str}", fontsize=8.5,
+              color=TEXT_MUTED, ha="right")
+
+    fig.subplots_adjust(left=0.07, right=0.9, top=0.82, bottom=0.12)
+    fig.savefig(CHART_FILE, facecolor=BG)
+    plt.close(fig)
 
 
 def send_chart():
