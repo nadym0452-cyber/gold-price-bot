@@ -1,33 +1,32 @@
-from database import init_db, add_shop
+from database import init_db, count_shops, add_shop
 
-init_db()
 
-sample_shops = [
-    {
-        "shop_name": "مجوهرات الفيوم الذهبية",
-        "governorate": "الفيوم",
-        "city": "الفيوم",
-        "address": "شارع الجمهورية، بجوار البنك الأهلي",
-        "phone": "01000000001",
-        "whatsapp": "01000000001",
-        "maps_url": "https://maps.google.com/?q=فيوم+مركز",
-        "source": "بيانات تجريبية للاختبار",
-        "verified": "verified",
-    },
-    {
-        "shop_name": "محلات الأمانة للمجوهرات",
-        "governorate": "الفيوم",
-        "city": "سنورس",
-        "address": "شارع المحطة، سنورس",
-        "phone": "01000000002",
-        "whatsapp": None,
-        "maps_url": None,
-        "source": "بيانات تجريبية للاختبار",
-        "verified": "verified",
-    },
-]
+def seed():
+    init_db()
+    if count_shops() > 0:
+        print("فيه بيانات موجودة بالفعل، مش هنضيف بيانات تجريبية تاني.")
+        return
 
-for shop in sample_shops:
-    add_shop(**shop)
+    sample_shops = [
+        ("محلات الفيوم للذهب", "الفيوم", "الفيوم",
+         "شارع الجمهورية، أمام المحكمة", "0842345678", "201012345678",
+         "https://maps.google.com/?q=29.309,30.842", "", "Verified", "بيانات تجريبية"),
+        ("مجوهرات النيل", "الفيوم", "الفيوم",
+         "ميدان قارون", "0842345679", "201098765432",
+         "https://maps.google.com/?q=29.310,30.843", "", "Verified", "بيانات تجريبية"),
+        ("ذهب سنورس", "الفيوم", "سنورس",
+         "شارع المحطة", "0842398765", "201055555555",
+         "https://maps.google.com/?q=29.35,30.88", "", "Verified", "بيانات تجريبية"),
+        ("مجوهرات إطسا", "الفيوم", "إطسا",
+         "السوق الرئيسي", "0842311111", "201066666666",
+         "https://maps.google.com/?q=29.28,30.75", "", "Verified", "بيانات تجريبية"),
+    ]
 
-print(f"تمت إضافة {len(sample_shops)} محل تجريبي بنجاح.")
+    for shop in sample_shops:
+        add_shop(*shop)
+
+    print(f"تم إضافة {len(sample_shops)} محل تجريبي لمحافظة الفيوم.")
+
+
+if __name__ == "__main__":
+    seed()
