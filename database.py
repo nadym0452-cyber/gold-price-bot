@@ -82,3 +82,25 @@ def get_shop_by_id(shop_id):
     row = conn.execute("SELECT * FROM shops WHERE id = ?", (shop_id,)).fetchone()
     conn.close()
     return row
+def get_pending_shops(limit=1):
+    conn = get_connection()
+    rows = conn.execute("""
+        SELECT * FROM shops WHERE status = 'Needs Review'
+        ORDER BY id LIMIT ?
+    """, (limit,)).fetchall()
+    conn.close()
+    return rows
+
+
+def count_pending_shops():
+    conn = get_connection()
+    count = conn.execute("SELECT COUNT(*) FROM shops WHERE status = 'Needs Review'").fetchone()[0]
+    conn.close()
+    return count
+
+
+def update_shop_status(shop_id, status):
+    conn = get_connection()
+    conn.execute("UPDATE shops SET status = ? WHERE id = ?", (status, shop_id))
+    conn.commit()
+    conn.close()
