@@ -5,3 +5,4 @@ arabic-reshaper
 python-bidi
 mplfinance
 pandas
+python-telegram-bot==20.7
