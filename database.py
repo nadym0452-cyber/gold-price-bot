@@ -1,31 +1,31 @@
 import sqlite3
 import os
+from datetime import datetime
 
-DB_FILE = "shops.db"
+DB_PATH = os.path.join(os.path.dirname(__file__), "shops.db")
 
 
 def get_connection():
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
 
 def init_db():
     conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("""
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS shops (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             shop_name TEXT NOT NULL,
             governorate TEXT NOT NULL,
-            city TEXT,
+            city TEXT NOT NULL,
             address TEXT,
             phone TEXT,
             whatsapp TEXT,
             maps_url TEXT,
-            source TEXT,
-            verified TEXT DEFAULT 'needs_review',
-            last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
+            source_url TEXT,
+            status TEXT DEFAULT 'Needs Review',
+            last_updated TEXT,
             notes TEXT
         )
     """)
@@ -33,59 +33,52 @@ def init_db():
     conn.close()
 
 
-def add_shop(shop_name, governorate, city=None, address=None, phone=None,
-             whatsapp=None, maps_url=None, source=None, verified="needs_review", notes=None):
+def count_shops():
     conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("""
+    count = conn.execute("SELECT COUNT(*) FROM shops").fetchone()[0]
+    conn.close()
+    return count
+
+
+def add_shop(shop_name, governorate, city, address="", phone="", whatsapp="",
+             maps_url="", source_url="", status="Needs Review", notes=""):
+    conn = get_connection()
+    conn.execute("""
         INSERT INTO shops (shop_name, governorate, city, address, phone,
-                            whatsapp, maps_url, source, verified, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (shop_name, governorate, city, address, phone, whatsapp, maps_url, source, verified, notes))
+                            whatsapp, maps_url, source_url, status, last_updated, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (shop_name, governorate, city, address, phone, whatsapp,
+          maps_url, source_url, status, datetime.now().strftime("%Y-%m-%d"), notes))
     conn.commit()
     conn.close()
 
 
-def get_cities_by_governorate(governorate):
+def get_cities(governorate, verified_only=True):
     conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT DISTINCT city FROM shops
-        WHERE governorate = ? AND verified = 'verified' AND city IS NOT NULL
-        ORDER BY city
-    """, (governorate,))
-    rows = cur.fetchall()
+    query = "SELECT DISTINCT city FROM shops WHERE governorate = ?"
+    params = [governorate]
+    if verified_only:
+        query += " AND status = 'Verified'"
+    query += " ORDER BY city"
+    rows = conn.execute(query, params).fetchall()
     conn.close()
-    return [row["city"] for row in rows]
+    return [r["city"] for r in rows]
 
 
-def get_shops(governorate, city=None):
+def get_shops(governorate, city, verified_only=True):
     conn = get_connection()
-    cur = conn.cursor()
-    if city:
-        cur.execute("""
-            SELECT * FROM shops WHERE governorate = ? AND city = ? AND verified = 'verified'
-            ORDER BY shop_name
-        """, (governorate, city))
-    else:
-        cur.execute("""
-            SELECT * FROM shops WHERE governorate = ? AND verified = 'verified'
-            ORDER BY shop_name
-        """, (governorate,))
-    rows = cur.fetchall()
+    query = "SELECT * FROM shops WHERE governorate = ? AND city = ?"
+    params = [governorate, city]
+    if verified_only:
+        query += " AND status = 'Verified'"
+    query += " ORDER BY shop_name"
+    rows = conn.execute(query, params).fetchall()
     conn.close()
     return rows
 
 
 def get_shop_by_id(shop_id):
     conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM shops WHERE id = ?", (shop_id,))
-    row = cur.fetchone()
+    row = conn.execute("SELECT * FROM shops WHERE id = ?", (shop_id,)).fetchone()
     conn.close()
     return row
-
-
-if __name__ == "__main__":
-    init_db()
-    print("Database initialized.")
