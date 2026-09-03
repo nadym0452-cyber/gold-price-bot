@@ -3,12 +3,16 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-from database import init_db, get_cities, get_shops, get_shop_by_id, count_shops
+from database import (
+    init_db, get_cities, get_shops, get_shop_by_id, count_shops,
+    get_pending_shops, count_pending_shops, update_shop_status,
+)
 from seed_data import seed
 
 logging.basicConfig(level=logging.INFO)
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
+ADMIN_ID = 8693924902
 
 GOVERNORATES = [
     "القاهرة", "الجيزة", "الإسكندرية", "الفيوم", "المنوفية", "الشرقية",
@@ -110,6 +114,66 @@ async def show_shop_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
 
+async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("مش مسموح لك بالوصول لده.")
+        return
+    await send_next_pending(update.message, context)
+
+
+async def send_next_pending(message_obj, context: ContextTypes.DEFAULT_TYPE, edit=False):
+    pending = get_pending_shops(limit=1)
+    total = count_pending_shops()
+
+    if not pending:
+        text = "✅ مفيش محلات محتاجة مراجعة دلوقتي."
+        if edit:
+            await message_obj.edit_message_text(text)
+        else:
+            await message_obj.reply_text(text)
+        return
+
+    shop = pending[0]
+    text = (
+        f"📋 محتاج مراجعة ({total} محل متبقي)\n\n"
+        f"💍 {shop['shop_name']}\n"
+        f"📍 المحافظة: {shop['governorate']}\n"
+        f"🏙 المدينة: {shop['city']}\n"
+        f"📌 العنوان: {shop['address'] or '—'}\n"
+        f"📞 الهاتف: {shop['phone'] or '—'}\n"
+        f"💬 واتساب: {shop['whatsapp'] or '—'}\n"
+        f"🗺 الخريطة: {shop['maps_url'] or '—'}\n"
+        f"🗂 المصدر: {shop['source_url'] or '—'}"
+    )
+    buttons = [[
+        InlineKeyboardButton("✅ اعتماد", callback_data=f"admin_approve_{shop['id']}"),
+        InlineKeyboardButton("❌ رفض", callback_data=f"admin_reject_{shop['id']}"),
+    ]]
+
+    if edit:
+        await message_obj.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+    else:
+        await message_obj.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+
+async def admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if query.from_user.id != ADMIN_ID:
+        await query.answer("مش مسموح لك.", show_alert=True)
+        return
+    await query.answer()
+
+    data = query.data
+    if data.startswith("admin_approve_"):
+        shop_id = int(data.replace("admin_approve_", ""))
+        update_shop_status(shop_id, "Verified")
+    elif data.startswith("admin_reject_"):
+        shop_id = int(data.replace("admin_reject_", ""))
+        update_shop_status(shop_id, "Invalid")
+
+    await send_next_pending(query, context, edit=True)
+
+
 def main():
     init_db()
     if count_shops() == 0:
@@ -117,9 +181,11 @@ def main():
 
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("admin", admin))
     app.add_handler(CallbackQueryHandler(show_governorates, pattern="^shops_menu$"))
     app.add_handler(CallbackQueryHandler(show_cities, pattern="^gov_"))
     app.add_handler(CallbackQueryHandler(show_shops, pattern="^city_"))
+    app.add_handler(CallbackQueryHandler(admin_action, pattern="^admin_"))
     app.add_handler(CallbackQueryHandler(show_shop_details, pattern="^shop_"))
     app.run_polling()
 
