@@ -1,13 +1,17 @@
 import os
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import (
+    Application, CommandHandler, CallbackQueryHandler,
+    MessageHandler, filters, ContextTypes,
+)
 
 from database import (
     init_db, get_cities, get_shops, get_shop_by_id, count_shops,
     get_pending_shops, count_pending_shops, update_shop_status,
 )
 from seed_data import seed
+from import_csv import import_from_csv
 
 logging.basicConfig(level=logging.INFO)
 
@@ -174,6 +178,28 @@ async def admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_next_pending(query, context, edit=True)
 
 
+async def handle_csv_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    document = update.message.document
+    if not document or not document.file_name.endswith(".csv"):
+        await update.message.reply_text("من فضلك ابعت ملف بصيغة CSV.")
+        return
+
+    file = await document.get_file()
+    local_path = "temp_import.csv"
+    await file.download_to_drive(local_path)
+
+    try:
+        import_from_csv(local_path)
+        await update.message.reply_text(
+            "✅ تم استيراد الملف بنجاح.\nراجع المحلات الجديدة بالأمر /admin"
+        )
+    except Exception as e:
+        await update.message.reply_text(f"حصل خطأ أثناء الاستيراد: {e}")
+
+
 def main():
     init_db()
     if count_shops() == 0:
@@ -182,6 +208,7 @@ def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_csv_upload))
     app.add_handler(CallbackQueryHandler(show_governorates, pattern="^shops_menu$"))
     app.add_handler(CallbackQueryHandler(show_cities, pattern="^gov_"))
     app.add_handler(CallbackQueryHandler(show_shops, pattern="^city_"))
