@@ -96,11 +96,11 @@ async def show_shop_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("المحل ده مش موجود.")
         return
 
-    text = f"💍 {shop['shop_name']}\n📍 {shop['address']}\n📞 {shop['phone']}"
+    text = f"💍 {shop['shop_name']}\n📍 {shop['address']}"
+    if shop["phone"]:
+        text += f"\n📱 للاتصال: {shop['phone']}"
 
     buttons = []
-    if shop["phone"]:
-        buttons.append([InlineKeyboardButton("📞 اتصال", url=f"tel:{shop['phone']}")])
     if shop["whatsapp"]:
         buttons.append([InlineKeyboardButton("💬 واتساب", url=f"https://wa.me/{shop['whatsapp']}")])
     if shop["maps_url"]:
