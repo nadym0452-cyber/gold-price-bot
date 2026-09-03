@@ -1,132 +1,128 @@
 import os
 import logging
-import sqlite3
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# استدعاء دالة إنشاء قاعدة البيانات والدالة التجريبية
-from database import init_db, DB_NAME
-from seed_data import seed_fayoum_data
+from database import init_db, get_cities, get_shops, get_shop_by_id, count_shops
+from seed_data import seed
 
-# إعداد السجلات (Logging)
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+logging.basicConfig(level=logging.INFO)
 
-# المحافظات المتاحة حالياً
+BOT_TOKEN = os.environ["BOT_TOKEN"]
+
 GOVERNORATES = [
-    "الفيوم", "القاهرة", "الجيزة", "الإسكندرية", "الدقهلية",
-    "الشرقية", "القليوبية", "الغربية", "المنوفية", "البحيرة",
-    "كفر الشيخ", "دمياط", "بورسعيد", "الإسماعيلية", "السويس",
-    "شمال سيناء", "جنوب سيناء", "بني سويف", "المنيا", "أسيوط",
-    "سوهاج", "قنا", "الأقصر", "أسوان", "البحر الأحمر", "الوادي الجديد", "مطروح"
+    "القاهرة", "الجيزة", "الإسكندرية", "الفيوم", "المنوفية", "الشرقية",
+    "الدقهلية", "البحيرة", "الغربية", "كفر الشيخ", "دمياط", "بورسعيد",
+    "الإسماعيلية", "السويس", "شمال سيناء", "جنوب سيناء", "بني سويف",
+    "المنيا", "أسيوط", "سوهاج", "قنا", "الأقصر", "أسوان", "البحر الأحمر",
+    "الوادي الجديد", "مطروح", "القليوبية",
 ]
 
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [
-        [InlineKeyboardButton("🏪 محلات وتجار الذهب في مصر", callback_data="show_govs")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    keyboard = [[InlineKeyboardButton("🏪 محلات وتجار الذهب في مصر", callback_data="shops_menu")]]
     await update.message.reply_text(
-        "أهلاً بك في بوت أسعار ودليل محلات الذهب في مصر 🇪🇬\nاختر من القائمة أدناه:",
-        reply_markup=reply_markup
+        "أهلاً بيك في بوت الذهب 🟡\nاختر من القائمة:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
-async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+async def show_governorates(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    data = query.data
+    buttons = []
+    row = []
+    for i, gov in enumerate(GOVERNORATES, 1):
+        row.append(InlineKeyboardButton(f"📍 {gov}", callback_data=f"gov_{gov}"))
+        if i % 2 == 0:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    await query.edit_message_text(
+        "🇪🇬 اختر المحافظة التي تبحث فيها عن محلات وتجار الذهب:",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
 
-    if data == "show_govs":
-        # عرض قائمة المحافظات الـ 27
-        keyboard = []
-        row = []
-        for gov in GOVERNORATES:
-            row.append(InlineKeyboardButton(gov, callback_data=f"gov_{gov}"))
-            if len(row) == 2:
-                keyboard.append(row)
-                row = []
-        if row:
-            keyboard.append(row)
-            
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text("اختر المحافظة:", reply_markup=reply_markup)
 
-    elif data.startswith("gov_"):
-        gov_name = data.replace("gov_", "")
-        
-        # البحث عن المدن التابعة للمحافظة من قاعدة البيانات
-        conn = sqlite3.connect(DB_NAME)
-        cursor = conn.cursor()
-        cursor.execute("SELECT DISTINCT city FROM shops WHERE governorate = ? AND status = 'Verified'", (gov_name,))
-        cities = cursor.fetchall()
-        conn.close()
+async def show_cities(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    gov_name = query.data.replace("gov_", "")
+    cities = get_cities(gov_name)
 
-        if not cities:
-            keyboard = [[InlineKeyboardButton("🔙 رجوع للمحافظات", callback_data="show_govs")]]
-            await query.edit_message_text(
-                f"عفواً، لا توجد محلات مسجلة حالياً في محافظة **{gov_name}**.\nجرب اختيار **الفيوم** لرؤية البيانات التجريبية.",
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode="Markdown"
-            )
-            return
-
-        keyboard = []
-        for city_tuple in cities:
-            city = city_tuple[0]
-            keyboard.append([InlineKeyboardButton(f"📍 {city}", callback_data=f"city_{gov_name}_{city}")])
-        keyboard.append([InlineKeyboardButton("🔙 رجوع للمحافظات", callback_data="show_govs")])
-
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(f"محافظة {gov_name} - اختر المدينة/المركز:", reply_markup=reply_markup)
-
-    elif data.startswith("city_"):
-        _, gov_name, city_name = data.split("_", 2)
-
-        # جلب المحلات المعتمدة فقط في هذه المدينة
-        conn = sqlite3.connect(DB_NAME)
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT shop_name, phone, address, maps_url FROM shops WHERE governorate = ? AND city = ? AND status = 'Verified'",
-            (gov_name, city_name)
+    if not cities:
+        await query.edit_message_text(
+            f"📍 محافظة {gov_name}\n\nقاعدة بيانات المحلات هتتضاف قريباً في هذه المحافظة.",
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("🔙 رجوع للمحافظات", callback_data="shops_menu")]]
+            ),
         )
-        shops = cursor.fetchall()
-        conn.close()
-
-        text = f"🏪 **محلات الذهب في {city_name} ({gov_name}):**\n\n"
-        for shop in shops:
-            name, phone, address, maps_url = shop
-            text += f"🔹 **{name}**\n"
-            text += f"📞 هاتف: `{phone}`\n"
-            text += f"📍 العنوان: {address}\n"
-            if maps_url:
-                text += f"🗺️ [رابط الموقع على الخريطة]({maps_url})\n"
-            text += "━━━\n"
-
-        keyboard = [[InlineKeyboardButton("🔙 رجوع للمحافظات", callback_data="show_govs")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown", disable_web_page_preview=True)
-
-def main():
-    token = os.environ.get("BOT_TOKEN")
-    if not token:
-        print("خطأ: لم يتم العثور على BOT_TOKEN في المتغيرات البيئية!")
         return
 
-    # 1. إنشاء الجدول إن لم يكن موجوداً
+    buttons = [[InlineKeyboardButton(f"🏙 {c}", callback_data=f"city_{gov_name}|{c}")] for c in cities]
+    buttons.append([InlineKeyboardButton("🔙 رجوع للمحافظات", callback_data="shops_menu")])
+    await query.edit_message_text(
+        f"📍 محافظة {gov_name}\nاختر المدينة/المركز:",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+
+
+async def show_shops(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    gov_name, city_name = query.data.replace("city_", "").split("|")
+    shops = get_shops(gov_name, city_name)
+
+    if not shops:
+        await query.edit_message_text("مفيش محلات متاحة هنا حالياً.")
+        return
+
+    buttons = [[InlineKeyboardButton(f"💍 {s['shop_name']}", callback_data=f"shop_{s['id']}")] for s in shops]
+    buttons.append([InlineKeyboardButton("🔙 رجوع", callback_data=f"gov_{gov_name}")])
+    await query.edit_message_text(
+        f"🏙 {city_name} - {gov_name}\nمحلات الذهب المتاحة:",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+
+
+async def show_shop_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    shop_id = int(query.data.replace("shop_", ""))
+    shop = get_shop_by_id(shop_id)
+
+    if not shop:
+        await query.edit_message_text("المحل ده مش موجود.")
+        return
+
+    text = f"💍 {shop['shop_name']}\n📍 {shop['address']}\n📞 {shop['phone']}"
+
+    buttons = []
+    if shop["phone"]:
+        buttons.append([InlineKeyboardButton("📞 اتصال", url=f"tel:{shop['phone']}")])
+    if shop["whatsapp"]:
+        buttons.append([InlineKeyboardButton("💬 واتساب", url=f"https://wa.me/{shop['whatsapp']}")])
+    if shop["maps_url"]:
+        buttons.append([InlineKeyboardButton("🗺 الموقع على الخريطة", url=shop["maps_url"])])
+    buttons.append([InlineKeyboardButton("🔙 رجوع", callback_data=f"city_{shop['governorate']}|{shop['city']}")])
+
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+
+def main():
     init_db()
-    
-    # 2. إضافة البيانات التجريبية لمحافظة الفيوم
-    seed_fayoum_data()
+    if count_shops() == 0:
+        seed()
 
-    # 3. تشغيل البوت
-    app = Application.builder().token(token).build()
+    app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(handle_callback))
-
-    print("البوت يعمل الآن بنجاح...")
+    app.add_handler(CallbackQueryHandler(show_governorates, pattern="^shops_menu$"))
+    app.add_handler(CallbackQueryHandler(show_cities, pattern="^gov_"))
+    app.add_handler(CallbackQueryHandler(show_shops, pattern="^city_"))
+    app.add_handler(CallbackQueryHandler(show_shop_details, pattern="^shop_"))
     app.run_polling()
+
 
 if __name__ == "__main__":
     main()
