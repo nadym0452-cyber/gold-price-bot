@@ -138,8 +138,9 @@ async def send_next_pending(message_obj, context: ContextTypes.DEFAULT_TYPE, edi
         return
 
     shop = pending[0]
+    label = "⚠️ تكرار محتمل" if shop["status"] == "Possible Duplicate" else "📋 محتاج مراجعة"
     text = (
-        f"📋 محتاج مراجعة ({total} محل متبقي)\n\n"
+        f"{label} ({total} محل متبقي)\n\n"
         f"💍 {shop['shop_name']}\n"
         f"📍 المحافظة: {shop['governorate']}\n"
         f"🏙 المدينة: {shop['city']}\n"
