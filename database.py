@@ -104,3 +104,25 @@ def update_shop_status(shop_id, status):
     conn.execute("UPDATE shops SET status = ? WHERE id = ?", (status, shop_id))
     conn.commit()
     conn.close()
+def find_possible_duplicate(shop_name, governorate, phone):
+    conn = get_connection()
+    rows = conn.execute("""
+        SELECT * FROM shops WHERE governorate = ?
+    """, (governorate,)).fetchall()
+    conn.close()
+
+    for row in rows:
+        if phone and row["phone"] and phone.strip() == row["phone"].strip():
+            return row
+        if _names_similar(shop_name, row["shop_name"]):
+            return row
+    return None
+
+
+def _names_similar(name1, name2):
+    n1 = name1.strip().lower().replace(" ", "")
+    n2 = name2.strip().lower().replace(" ", "")
+    if n1 == n2:
+        return True
+    shorter, longer = (n1, n2) if len(n1) <= len(n2) else (n2, n1)
+    return len(shorter) >= 4 and shorter in longer
