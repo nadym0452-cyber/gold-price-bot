@@ -1,15 +1,16 @@
 import os
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, filters, ContextTypes,
+    ConversationHandler,
 )
 
 from database import (
     init_db, get_cities, get_shop_by_id, count_shops,
     get_pending_shops, count_pending_shops, update_shop_status,
-    get_shops_paginated, search_shops_paginated,
+    get_shops_paginated, search_shops_paginated, add_shop,
 )
 from seed_data import seed
 from import_csv import import_from_csv
@@ -27,11 +28,14 @@ GOVERNORATES = [
     "الوادي الجديد", "مطروح", "القليوبية",
 ]
 
+ADD_NAME, ADD_GOV, ADD_CITY, ADD_ADDRESS, ADD_PHONE, ADD_WHATSAPP = range(6)
+
 
 def main_menu_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🏪 محلات وتجار الذهب في مصر", callback_data="shops_menu")],
         [InlineKeyboardButton("🔎 البحث عن محل ذهب", callback_data="search_start")],
+        [InlineKeyboardButton("➕ أضف محلك", callback_data="add_shop_start")],
     ])
 
 
@@ -195,7 +199,6 @@ async def show_search_results(message_obj, keyword, page, context, edit=False):
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.user_data.get("awaiting_search"):
         return
-
     context.user_data["awaiting_search"] = False
     keyword = update.message.text.strip()
     context.user_data["last_search"] = keyword
@@ -296,14 +299,111 @@ async def handle_csv_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"حصل خطأ أثناء الاستيراد: {e}")
 
 
+async def add_shop_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    context.user_data["new_shop"] = {}
+    await query.edit_message_text("➕ إضافة محلك\n\nاكتب اسم المحل:")
+    return ADD_NAME
+
+
+async def add_shop_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["new_shop"]["shop_name"] = update.message.text.strip()
+    buttons = []
+    row = []
+    for i, gov in enumerate(GOVERNORATES, 1):
+        row.append(InlineKeyboardButton(gov, callback_data=f"addgov_{gov}"))
+        if i % 2 == 0:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    await update.message.reply_text(
+        "اختر المحافظة:",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+    return ADD_GOV
+
+
+async def add_shop_gov(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    gov = query.data.replace("addgov_", "")
+    context.user_data["new_shop"]["governorate"] = gov
+    await query.edit_message_text(f"المحافظة: {gov}\n\nاكتب اسم المدينة أو المركز:")
+    return ADD_CITY
+
+
+async def add_shop_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["new_shop"]["city"] = update.message.text.strip()
+    await update.message.reply_text("اكتب عنوان المحل بالتفصيل:")
+    return ADD_ADDRESS
+
+
+async def add_shop_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["new_shop"]["address"] = update.message.text.strip()
+    await update.message.reply_text("اكتب رقم الهاتف:")
+    return ADD_PHONE
+
+
+async def add_shop_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["new_shop"]["phone"] = update.message.text.strip()
+    await update.message.reply_text("اكتب رقم الواتساب (أو اكتب لا يوجد لو مفيش):")
+    return ADD_WHATSAPP
+
+
+async def add_shop_whatsapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    whatsapp_text = update.message.text.strip()
+    whatsapp = "" if whatsapp_text in ("لا يوجد", "-", "لا") else whatsapp_text
+
+    data = context.user_data["new_shop"]
+    add_shop(
+        shop_name=data["shop_name"],
+        governorate=data["governorate"],
+        city=data["city"],
+        address=data["address"],
+        phone=data["phone"],
+        whatsapp=whatsapp,
+        source_url="أضيف عن طريق صاحب المحل",
+        status="Needs Review",
+    )
+    context.user_data["new_shop"] = {}
+    await update.message.reply_text(
+        "✅ تم استلام بيانات محلك بنجاح، وهيتم مراجعتها والتأكد منها قريباً.\nشكراً لك 🙏",
+        reply_markup=main_menu_keyboard(),
+    )
+    return ConversationHandler.END
+
+
+async def add_shop_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["new_shop"] = {}
+    await update.message.reply_text("تم إلغاء العملية.", reply_markup=main_menu_keyboard())
+    return ConversationHandler.END
+
+
 def main():
     init_db()
     if count_shops() == 0:
         seed()
 
     app = Application.builder().token(BOT_TOKEN).build()
+
+    add_shop_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(add_shop_start, pattern="^add_shop_start$")],
+        states={
+            ADD_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_shop_name)],
+            ADD_GOV: [CallbackQueryHandler(add_shop_gov, pattern="^addgov_")],
+            ADD_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_shop_city)],
+            ADD_ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_shop_address)],
+            ADD_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_shop_phone)],
+            ADD_WHATSAPP: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_shop_whatsapp)],
+        },
+        fallbacks=[CommandHandler("cancel", add_shop_cancel)],
+    )
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin))
+    app.add_handler(add_shop_conv)
     app.add_handler(MessageHandler(filters.Document.ALL, handle_csv_upload))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
     app.add_handler(CallbackQueryHandler(show_governorates, pattern="^shops_menu$"))
