@@ -150,6 +150,9 @@ async def send_next_pending(message_obj, context: ContextTypes.DEFAULT_TYPE, edi
         f"🗺 الخريطة: {shop['maps_url'] or '—'}\n"
         f"🗂 المصدر: {shop['source_url'] or '—'}"
     )
+    if shop["notes"]:
+        text += f"\n\n📝 ملاحظات: {shop['notes']}"
+
     buttons = [[
         InlineKeyboardButton("✅ اعتماد", callback_data=f"admin_approve_{shop['id']}"),
         InlineKeyboardButton("❌ رفض", callback_data=f"admin_reject_{shop['id']}"),
