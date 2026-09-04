@@ -40,8 +40,37 @@ def count_shops():
     return count
 
 
+def _names_similar(name1, name2):
+    n1 = name1.strip().lower().replace(" ", "")
+    n2 = name2.strip().lower().replace(" ", "")
+    if n1 == n2:
+        return True
+    shorter, longer = (n1, n2) if len(n1) <= len(n2) else (n2, n1)
+    return len(shorter) >= 4 and shorter in longer
+
+
+def find_possible_duplicate(shop_name, governorate, phone):
+    conn = get_connection()
+    rows = conn.execute("""
+        SELECT * FROM shops WHERE governorate = ?
+    """, (governorate,)).fetchall()
+    conn.close()
+
+    for row in rows:
+        if phone and row["phone"] and phone.strip() == row["phone"].strip():
+            return row
+        if _names_similar(shop_name, row["shop_name"]):
+            return row
+    return None
+
+
 def add_shop(shop_name, governorate, city, address="", phone="", whatsapp="",
              maps_url="", source_url="", status="Needs Review", notes=""):
+    duplicate = find_possible_duplicate(shop_name, governorate, phone)
+    if duplicate:
+        status = "Possible Duplicate"
+        notes = f"{notes} | تكرار محتمل مع محل ID {duplicate['id']}: {duplicate['shop_name']}".strip(" |")
+
     conn = get_connection()
     conn.execute("""
         INSERT INTO shops (shop_name, governorate, city, address, phone,
@@ -82,10 +111,12 @@ def get_shop_by_id(shop_id):
     row = conn.execute("SELECT * FROM shops WHERE id = ?", (shop_id,)).fetchone()
     conn.close()
     return row
+
+
 def get_pending_shops(limit=1):
     conn = get_connection()
     rows = conn.execute("""
-        SELECT * FROM shops WHERE status = 'Needs Review'
+        SELECT * FROM shops WHERE status IN ('Needs Review', 'Possible Duplicate')
         ORDER BY id LIMIT ?
     """, (limit,)).fetchall()
     conn.close()
@@ -94,7 +125,9 @@ def get_pending_shops(limit=1):
 
 def count_pending_shops():
     conn = get_connection()
-    count = conn.execute("SELECT COUNT(*) FROM shops WHERE status = 'Needs Review'").fetchone()[0]
+    count = conn.execute(
+        "SELECT COUNT(*) FROM shops WHERE status IN ('Needs Review', 'Possible Duplicate')"
+    ).fetchone()[0]
     conn.close()
     return count
 
@@ -104,25 +137,3 @@ def update_shop_status(shop_id, status):
     conn.execute("UPDATE shops SET status = ? WHERE id = ?", (status, shop_id))
     conn.commit()
     conn.close()
-def find_possible_duplicate(shop_name, governorate, phone):
-    conn = get_connection()
-    rows = conn.execute("""
-        SELECT * FROM shops WHERE governorate = ?
-    """, (governorate,)).fetchall()
-    conn.close()
-
-    for row in rows:
-        if phone and row["phone"] and phone.strip() == row["phone"].strip():
-            return row
-        if _names_similar(shop_name, row["shop_name"]):
-            return row
-    return None
-
-
-def _names_similar(name1, name2):
-    n1 = name1.strip().lower().replace(" ", "")
-    n2 = name2.strip().lower().replace(" ", "")
-    if n1 == n2:
-        return True
-    shorter, longer = (n1, n2) if len(n1) <= len(n2) else (n2, n1)
-    return len(shorter) >= 4 and shorter in longer
