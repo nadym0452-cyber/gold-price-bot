@@ -7,9 +7,9 @@ from telegram.ext import (
 )
 
 from database import (
-    init_db, get_cities, get_shops, get_shop_by_id, count_shops,
+    init_db, get_cities, get_shop_by_id, count_shops,
     get_pending_shops, count_pending_shops, update_shop_status,
-    search_shops,
+    get_shops_paginated, search_shops_paginated,
 )
 from seed_data import seed
 from import_csv import import_from_csv
@@ -28,14 +28,26 @@ GOVERNORATES = [
 ]
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [
+def main_menu_keyboard():
+    return InlineKeyboardMarkup([
         [InlineKeyboardButton("🏪 محلات وتجار الذهب في مصر", callback_data="shops_menu")],
         [InlineKeyboardButton("🔎 البحث عن محل ذهب", callback_data="search_start")],
-    ]
+    ])
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "أهلاً بيك في بوت الذهب 🟡\nاختر من القائمة:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        reply_markup=main_menu_keyboard(),
+    )
+
+
+async def back_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "أهلاً بيك في بوت الذهب 🟡\nاختر من القائمة:",
+        reply_markup=main_menu_keyboard(),
     )
 
 
@@ -72,7 +84,7 @@ async def show_cities(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    buttons = [[InlineKeyboardButton(f"🏙 {c}", callback_data=f"city_{gov_name}|{c}")] for c in cities]
+    buttons = [[InlineKeyboardButton(f"🏙 {c}", callback_data=f"city_{gov_name}|{c}|0")] for c in cities]
     buttons.append([InlineKeyboardButton("🔙 رجوع للمحافظات", callback_data="shops_menu")])
     await query.edit_message_text(
         f"📍 محافظة {gov_name}\nاختر المدينة/المركز:",
@@ -83,17 +95,35 @@ async def show_cities(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_shops(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    gov_name, city_name = query.data.replace("city_", "").split("|")
-    shops = get_shops(gov_name, city_name)
+    gov_name, city_name, page_str = query.data.replace("city_", "").split("|")
+    page = int(page_str)
+
+    shops, total_pages = get_shops_paginated(gov_name, city_name, page)
 
     if not shops:
-        await query.edit_message_text("مفيش محلات متاحة هنا حالياً.")
+        await query.edit_message_text(
+            "مفيش محلات متاحة هنا حالياً.",
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("🔙 رجوع", callback_data=f"gov_{gov_name}")]]
+            ),
+        )
         return
 
     buttons = [[InlineKeyboardButton(f"💍 {s['shop_name']}", callback_data=f"shop_{s['id']}")] for s in shops]
+
+    nav_row = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"city_{gov_name}|{city_name}|{page-1}"))
+    if page < total_pages - 1:
+        nav_row.append(InlineKeyboardButton("التالي ➡️", callback_data=f"city_{gov_name}|{city_name}|{page+1}"))
+    if nav_row:
+        buttons.append(nav_row)
+
     buttons.append([InlineKeyboardButton("🔙 رجوع", callback_data=f"gov_{gov_name}")])
+
+    page_info = f" (صفحة {page+1}/{total_pages})" if total_pages > 1 else ""
     await query.edit_message_text(
-        f"🏙 {city_name} - {gov_name}\nمحلات الذهب المتاحة:",
+        f"🏙 {city_name} - {gov_name}\nمحلات الذهب المتاحة:{page_info}",
         reply_markup=InlineKeyboardMarkup(buttons),
     )
 
@@ -122,49 +152,44 @@ async def show_shop_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
 
-async def show_shop_details_from_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    shop_id = int(context.matches[0].group(1)) if False else None
-    query = update.callback_query
-    await query.answer()
-    shop_id = int(query.data.replace("shop_", ""))
-    shop = get_shop_by_id(shop_id)
-
-    if not shop:
-        await query.edit_message_text("المحل ده مش موجود.")
-        return
-
-    text = f"💍 {shop['shop_name']}\n📍 {shop['address']}"
-    if shop["phone"]:
-        text += f"\n📱 للاتصال: {shop['phone']}"
-
-    buttons = []
-    if shop["whatsapp"]:
-        buttons.append([InlineKeyboardButton("💬 واتساب", url=f"https://wa.me/{shop['whatsapp']}")])
-    if shop["maps_url"]:
-        buttons.append([InlineKeyboardButton("🗺 الموقع على الخريطة", url=shop["maps_url"])])
-    buttons.append([InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu")])
-
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
-
-
-async def back_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    keyboard = [
-        [InlineKeyboardButton("🏪 محلات وتجار الذهب في مصر", callback_data="shops_menu")],
-        [InlineKeyboardButton("🔎 البحث عن محل ذهب", callback_data="search_start")],
-    ]
-    await query.edit_message_text(
-        "أهلاً بيك في بوت الذهب 🟡\nاختر من القائمة:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-    )
-
-
 async def search_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     context.user_data["awaiting_search"] = True
     await query.edit_message_text("🔎 اكتب اسم المحل أو اسم المنطقة اللي عايز تدور عليها:")
+
+
+async def show_search_results(message_obj, keyword, page, context, edit=False):
+    results, total_pages = search_shops_paginated(keyword, page)
+
+    if not results:
+        text = f"مفيش نتائج لـ \"{keyword}\"."
+        buttons = [[InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu")]]
+        if edit:
+            await message_obj.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+        else:
+            await message_obj.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+        return
+
+    buttons = [[InlineKeyboardButton(f"💍 {s['shop_name']} - {s['city']}", callback_data=f"shop_{s['id']}")] for s in results]
+
+    nav_row = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"searchpage_{page-1}"))
+    if page < total_pages - 1:
+        nav_row.append(InlineKeyboardButton("التالي ➡️", callback_data=f"searchpage_{page+1}"))
+    if nav_row:
+        buttons.append(nav_row)
+
+    buttons.append([InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu")])
+
+    page_info = f" (صفحة {page+1}/{total_pages})" if total_pages > 1 else ""
+    text = f"نتائج البحث عن \"{keyword}\"{page_info}:"
+
+    if edit:
+        await message_obj.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+    else:
+        await message_obj.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
 
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -173,23 +198,16 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     context.user_data["awaiting_search"] = False
     keyword = update.message.text.strip()
-    results = search_shops(keyword)
+    context.user_data["last_search"] = keyword
+    await show_search_results(update.message, keyword, 0, context)
 
-    if not results:
-        await update.message.reply_text(
-            f"مفيش نتائج لـ \"{keyword}\".",
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu")]]
-            ),
-        )
-        return
 
-    buttons = [[InlineKeyboardButton(f"💍 {s['shop_name']} - {s['city']}", callback_data=f"shop_{s['id']}")] for s in results]
-    buttons.append([InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu")])
-    await update.message.reply_text(
-        f"نتائج البحث عن \"{keyword}\" ({len(results)}):",
-        reply_markup=InlineKeyboardMarkup(buttons),
-    )
+async def search_page_nav(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    page = int(query.data.replace("searchpage_", ""))
+    keyword = context.user_data.get("last_search", "")
+    await show_search_results(query, keyword, page, context, edit=True)
 
 
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -292,6 +310,7 @@ def main():
     app.add_handler(CallbackQueryHandler(show_cities, pattern="^gov_"))
     app.add_handler(CallbackQueryHandler(show_shops, pattern="^city_"))
     app.add_handler(CallbackQueryHandler(search_start, pattern="^search_start$"))
+    app.add_handler(CallbackQueryHandler(search_page_nav, pattern="^searchpage_"))
     app.add_handler(CallbackQueryHandler(back_to_main_menu, pattern="^main_menu$"))
     app.add_handler(CallbackQueryHandler(admin_action, pattern="^admin_"))
     app.add_handler(CallbackQueryHandler(show_shop_details, pattern="^shop_"))
