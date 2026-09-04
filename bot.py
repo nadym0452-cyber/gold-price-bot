@@ -21,6 +21,16 @@ logging.basicConfig(level=logging.INFO)
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 ADMIN_ID = 8693924902
 
+LRM = "\u200e"
+
+
+def ltr(value):
+    """يمنع تليجرام من عكس اتجاه الأرقام/الروابط اللاتينية جوه نص عربي."""
+    if not value:
+        return value
+    return f"{LRM}{value}{LRM}"
+
+
 GOVERNORATES = [
     "القاهرة", "الجيزة", "الإسكندرية", "الفيوم", "المنوفية", "الشرقية",
     "الدقهلية", "البحيرة", "الغربية", "كفر الشيخ", "دمياط", "بورسعيد",
@@ -145,7 +155,7 @@ async def show_shop_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = f"💍 {shop['shop_name']}\n📍 {shop['address']}"
     if shop["phone"]:
-        text += f"\n📱 للاتصال: {shop['phone']}"
+        text += f"\n📱 للاتصال: {ltr(shop['phone'])}"
 
     buttons = []
     if shop["whatsapp"]:
@@ -232,8 +242,8 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"📍 المحافظة: {extracted.get('governorate') or '—'}\n"
             f"🏙 المدينة: {extracted.get('city') or '—'}\n"
             f"📌 العنوان: {extracted.get('address') or '—'}\n"
-            f"📞 الهاتف: {extracted.get('phone') or '—'}\n"
-            f"💬 واتساب: {extracted.get('whatsapp') or '—'}\n\n"
+            f"📞 الهاتف: {ltr(extracted.get('phone')) if extracted.get('phone') else '—'}\n"
+            f"💬 واتساب: {ltr(extracted.get('whatsapp')) if extracted.get('whatsapp') else '—'}\n\n"
             "صح البيانات دي؟"
         )
         buttons = [[
@@ -319,9 +329,9 @@ async def send_next_pending(message_obj, context: ContextTypes.DEFAULT_TYPE, edi
         f"📍 المحافظة: {shop['governorate']}\n"
         f"🏙 المدينة: {shop['city']}\n"
         f"📌 العنوان: {shop['address'] or '—'}\n"
-        f"📞 الهاتف: {shop['phone'] or '—'}\n"
-        f"💬 واتساب: {shop['whatsapp'] or '—'}\n"
-        f"🗺 الخريطة: {shop['maps_url'] or '—'}\n"
+        f"📞 الهاتف: {ltr(shop['phone']) if shop['phone'] else '—'}\n"
+        f"💬 واتساب: {ltr(shop['whatsapp']) if shop['whatsapp'] else '—'}\n"
+        f"🗺 الخريطة: {ltr(shop['maps_url']) if shop['maps_url'] else '—'}\n"
         f"🗂 المصدر: {shop['source_url'] or '—'}"
     )
     if shop["notes"]:
