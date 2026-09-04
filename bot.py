@@ -9,6 +9,7 @@ from telegram.ext import (
 from database import (
     init_db, get_cities, get_shops, get_shop_by_id, count_shops,
     get_pending_shops, count_pending_shops, update_shop_status,
+    search_shops,
 )
 from seed_data import seed
 from import_csv import import_from_csv
@@ -28,7 +29,10 @@ GOVERNORATES = [
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton("🏪 محلات وتجار الذهب في مصر", callback_data="shops_menu")]]
+    keyboard = [
+        [InlineKeyboardButton("🏪 محلات وتجار الذهب في مصر", callback_data="shops_menu")],
+        [InlineKeyboardButton("🔎 البحث عن محل ذهب", callback_data="search_start")],
+    ]
     await update.message.reply_text(
         "أهلاً بيك في بوت الذهب 🟡\nاختر من القائمة:",
         reply_markup=InlineKeyboardMarkup(keyboard),
@@ -113,9 +117,79 @@ async def show_shop_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
         buttons.append([InlineKeyboardButton("💬 واتساب", url=f"https://wa.me/{shop['whatsapp']}")])
     if shop["maps_url"]:
         buttons.append([InlineKeyboardButton("🗺 الموقع على الخريطة", url=shop["maps_url"])])
-    buttons.append([InlineKeyboardButton("🔙 رجوع", callback_data=f"city_{shop['governorate']}|{shop['city']}")])
+    buttons.append([InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu")])
 
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+
+async def show_shop_details_from_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    shop_id = int(context.matches[0].group(1)) if False else None
+    query = update.callback_query
+    await query.answer()
+    shop_id = int(query.data.replace("shop_", ""))
+    shop = get_shop_by_id(shop_id)
+
+    if not shop:
+        await query.edit_message_text("المحل ده مش موجود.")
+        return
+
+    text = f"💍 {shop['shop_name']}\n📍 {shop['address']}"
+    if shop["phone"]:
+        text += f"\n📱 للاتصال: {shop['phone']}"
+
+    buttons = []
+    if shop["whatsapp"]:
+        buttons.append([InlineKeyboardButton("💬 واتساب", url=f"https://wa.me/{shop['whatsapp']}")])
+    if shop["maps_url"]:
+        buttons.append([InlineKeyboardButton("🗺 الموقع على الخريطة", url=shop["maps_url"])])
+    buttons.append([InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu")])
+
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+
+async def back_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    keyboard = [
+        [InlineKeyboardButton("🏪 محلات وتجار الذهب في مصر", callback_data="shops_menu")],
+        [InlineKeyboardButton("🔎 البحث عن محل ذهب", callback_data="search_start")],
+    ]
+    await query.edit_message_text(
+        "أهلاً بيك في بوت الذهب 🟡\nاختر من القائمة:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+async def search_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    context.user_data["awaiting_search"] = True
+    await query.edit_message_text("🔎 اكتب اسم المحل أو اسم المنطقة اللي عايز تدور عليها:")
+
+
+async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("awaiting_search"):
+        return
+
+    context.user_data["awaiting_search"] = False
+    keyword = update.message.text.strip()
+    results = search_shops(keyword)
+
+    if not results:
+        await update.message.reply_text(
+            f"مفيش نتائج لـ \"{keyword}\".",
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu")]]
+            ),
+        )
+        return
+
+    buttons = [[InlineKeyboardButton(f"💍 {s['shop_name']} - {s['city']}", callback_data=f"shop_{s['id']}")] for s in results]
+    buttons.append([InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu")])
+    await update.message.reply_text(
+        f"نتائج البحث عن \"{keyword}\" ({len(results)}):",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
 
 
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -213,9 +287,12 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_csv_upload))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
     app.add_handler(CallbackQueryHandler(show_governorates, pattern="^shops_menu$"))
     app.add_handler(CallbackQueryHandler(show_cities, pattern="^gov_"))
     app.add_handler(CallbackQueryHandler(show_shops, pattern="^city_"))
+    app.add_handler(CallbackQueryHandler(search_start, pattern="^search_start$"))
+    app.add_handler(CallbackQueryHandler(back_to_main_menu, pattern="^main_menu$"))
     app.add_handler(CallbackQueryHandler(admin_action, pattern="^admin_"))
     app.add_handler(CallbackQueryHandler(show_shop_details, pattern="^shop_"))
     app.run_polling()
