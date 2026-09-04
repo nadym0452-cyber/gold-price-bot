@@ -1,6 +1,6 @@
 import os
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, filters, ContextTypes,
@@ -14,6 +14,7 @@ from database import (
 )
 from seed_data import seed
 from import_csv import import_from_csv
+from ai_extract import extract_shop_data
 
 logging.basicConfig(level=logging.INFO)
 
@@ -196,13 +197,91 @@ async def show_search_results(message_obj, keyword, page, context, edit=False):
         await message_obj.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
 
+async def addtext_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    context.user_data["awaiting_raw_text"] = True
+    await update.message.reply_text(
+        "🤖 ابعت النص غير المنظم اللي بيوصف المحل (زي: \"مجوهرات أحمد - شارع الجمهورية - الفيوم - 01012345678\")\n\n"
+        "الذكاء الاصطناعي هيحاول يستخرج البيانات منه تلقائياً."
+    )
+
+
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("awaiting_raw_text"):
+        context.user_data["awaiting_raw_text"] = False
+        raw_text = update.message.text.strip()
+        await update.message.reply_text("⏳ جاري تحليل النص بالذكاء الاصطناعي...")
+
+        try:
+            extracted = extract_shop_data(raw_text)
+        except Exception as e:
+            await update.message.reply_text(f"حصل خطأ أثناء التحليل: {e}")
+            return
+
+        if not extracted.get("shop_name"):
+            await update.message.reply_text(
+                "❌ مقدرش أستخرج اسم محل واضح من النص ده. جرب تاني بنص أوضح أو استخدم /addtext."
+            )
+            return
+
+        context.user_data["extracted_shop"] = extracted
+        text = (
+            "🤖 البيانات المستخرجة:\n\n"
+            f"💍 الاسم: {extracted.get('shop_name') or '—'}\n"
+            f"📍 المحافظة: {extracted.get('governorate') or '—'}\n"
+            f"🏙 المدينة: {extracted.get('city') or '—'}\n"
+            f"📌 العنوان: {extracted.get('address') or '—'}\n"
+            f"📞 الهاتف: {extracted.get('phone') or '—'}\n"
+            f"💬 واتساب: {extracted.get('whatsapp') or '—'}\n\n"
+            "صح البيانات دي؟"
+        )
+        buttons = [[
+            InlineKeyboardButton("✅ تأكيد وإضافة", callback_data="raw_confirm"),
+            InlineKeyboardButton("❌ إلغاء", callback_data="raw_cancel"),
+        ]]
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+        return
+
     if not context.user_data.get("awaiting_search"):
         return
     context.user_data["awaiting_search"] = False
     keyword = update.message.text.strip()
     context.user_data["last_search"] = keyword
     await show_search_results(update.message, keyword, 0, context)
+
+
+async def raw_text_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if query.from_user.id != ADMIN_ID:
+        await query.answer("مش مسموح لك.", show_alert=True)
+        return
+    await query.answer()
+
+    extracted = context.user_data.get("extracted_shop")
+    if not extracted:
+        await query.edit_message_text("انتهت صلاحية العملية، جرب /addtext تاني.")
+        return
+
+    add_shop(
+        shop_name=extracted.get("shop_name", ""),
+        governorate=extracted.get("governorate", ""),
+        city=extracted.get("city", ""),
+        address=extracted.get("address", ""),
+        phone=extracted.get("phone", ""),
+        whatsapp=extracted.get("whatsapp", ""),
+        source_url="مستخرج بالذكاء الاصطناعي من نص خام",
+        status="Needs Review",
+    )
+    context.user_data["extracted_shop"] = None
+    await query.edit_message_text("✅ تم إضافة المحل بنجاح. راجعه بالأمر /admin")
+
+
+async def raw_text_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    context.user_data["extracted_shop"] = None
+    await query.edit_message_text("تم الإلغاء.")
 
 
 async def search_page_nav(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -403,6 +482,7 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin))
+    app.add_handler(CommandHandler("addtext", addtext_start))
     app.add_handler(add_shop_conv)
     app.add_handler(MessageHandler(filters.Document.ALL, handle_csv_upload))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
@@ -411,6 +491,8 @@ def main():
     app.add_handler(CallbackQueryHandler(show_shops, pattern="^city_"))
     app.add_handler(CallbackQueryHandler(search_start, pattern="^search_start$"))
     app.add_handler(CallbackQueryHandler(search_page_nav, pattern="^searchpage_"))
+    app.add_handler(CallbackQueryHandler(raw_text_confirm, pattern="^raw_confirm$"))
+    app.add_handler(CallbackQueryHandler(raw_text_cancel, pattern="^raw_cancel$"))
     app.add_handler(CallbackQueryHandler(back_to_main_menu, pattern="^main_menu$"))
     app.add_handler(CallbackQueryHandler(admin_action, pattern="^admin_"))
     app.add_handler(CallbackQueryHandler(show_shop_details, pattern="^shop_"))
