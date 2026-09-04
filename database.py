@@ -148,3 +148,37 @@ def search_shops(keyword):
     """, (pattern, pattern, pattern)).fetchall()
     conn.close()
     return rows
+SHOPS_PER_PAGE = 5
+
+
+def get_shops_paginated(governorate, city, page=0, verified_only=True):
+    conn = get_connection()
+    query = "SELECT * FROM shops WHERE governorate = ? AND city = ?"
+    params = [governorate, city]
+    if verified_only:
+        query += " AND status = 'Verified'"
+    query += " ORDER BY shop_name"
+    all_rows = conn.execute(query, params).fetchall()
+    conn.close()
+
+    start = page * SHOPS_PER_PAGE
+    end = start + SHOPS_PER_PAGE
+    total_pages = max(1, (len(all_rows) + SHOPS_PER_PAGE - 1) // SHOPS_PER_PAGE)
+    return all_rows[start:end], total_pages
+
+
+def search_shops_paginated(keyword, page=0):
+    conn = get_connection()
+    pattern = f"%{keyword.strip()}%"
+    all_rows = conn.execute("""
+        SELECT * FROM shops
+        WHERE status = 'Verified'
+        AND (shop_name LIKE ? OR city LIKE ? OR governorate LIKE ?)
+        ORDER BY shop_name
+    """, (pattern, pattern, pattern)).fetchall()
+    conn.close()
+
+    start = page * SHOPS_PER_PAGE
+    end = start + SHOPS_PER_PAGE
+    total_pages = max(1, (len(all_rows) + SHOPS_PER_PAGE - 1) // SHOPS_PER_PAGE)
+    return all_rows[start:end], total_pages
