@@ -137,3 +137,14 @@ def update_shop_status(shop_id, status):
     conn.execute("UPDATE shops SET status = ? WHERE id = ?", (status, shop_id))
     conn.commit()
     conn.close()
+def search_shops(keyword):
+    conn = get_connection()
+    pattern = f"%{keyword.strip()}%"
+    rows = conn.execute("""
+        SELECT * FROM shops
+        WHERE status = 'Verified'
+        AND (shop_name LIKE ? OR city LIKE ? OR governorate LIKE ?)
+        ORDER BY shop_name
+    """, (pattern, pattern, pattern)).fetchall()
+    conn.close()
+    return rows
