@@ -85,9 +85,52 @@ def build_image(prices):
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
 
-    f_price = ImageFont.truetype(FONT_BOLD_PATH, 88)
-    f_label = ImageFont.truetype(FONT_BOLD_PATH, 40)
-    f_datetime = ImageFont.truetype(FONT_BOLD_PATH, 34)
+    f_price = ImageFont.truetype(FONT_BOLD_PATH, 80)
+    f_label = ImageFont.truetype(FONT_BOLD_PATH, 36)
+    f_datetime = ImageFont.truetype(FONT_BOLD_PATH, 32)
+    f_badge = ImageFont.truetype(FONT_BOLD_PATH, 54)
+
+    def text_rtl(xy, text, font, fill, anchor="mm"):
+        draw_rtl(d, xy, text, font, fill, anchor)
+
+    outer_margin = 20
+    safe_margin = 110  # مساحة أمان إضافية عن الحواف عشان تليجرام ميقصش النص
+
+    d.rounded_rectangle(
+        (outer_margin, outer_margin, W - outer_margin, H - outer_margin),
+        radius=24, outline=GOLD, width=3
+    )
+
+    now = datetime.now(ZoneInfo("Africa/Cairo"))
+    date_str = f"{now.day} {ARABIC_MONTHS[now.month]}"
+    hour12 = now.strftime("%I:%M").replace(":", "،")
+    ampm = "م" if now.strftime("%p") == "PM" else "ص"
+    time_str = f"{hour12} {ampm}"
+
+    left_x = safe_margin
+    right_x = W - safe_margin
+
+    div_x2 = left_x + 190
+    div_x = right_x - 190
+
+    text_rtl((left_x + 100, H // 2 - 40), date_str, f_datetime, WHITE, anchor="rm")
+    text_rtl((left_x + 100, H // 2 + 40), time_str, f_datetime, WHITE, anchor="rm")
+
+    d.line([(div_x2, outer_margin + 25), (div_x2, H - outer_margin - 25)], fill=GOLD, width=2)
+
+    price_cx = (div_x2 + div_x) // 2
+    text_rtl((price_cx, H // 2), f"{prices['21']} جنيه", f_price, GOLD_LIGHT)
+
+    d.line([(div_x, outer_margin + 25), (div_x, H - outer_margin - 25)], fill=GOLD, width=2)
+
+    badge_cx = right_x - 30
+    d.rounded_rectangle(
+        (badge_cx - 60, H // 2 - 60, badge_cx + 60, H // 2 + 60), radius=18, fill=GOLD
+    )
+    d.text((badge_cx, H // 2), "21", font=f_badge, fill=(20, 15, 5), anchor="mm")
+    text_rtl((badge_cx, H // 2 + 90), "عيار", f_label, GOLD)
+
+    return img
 
     def text_rtl(xy, text, font, fill, anchor="mm"):
         draw_rtl(d, xy, text, font, fill, anchor)
