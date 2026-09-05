@@ -85,10 +85,45 @@ def build_image(prices):
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
 
-    f_price = ImageFont.truetype(FONT_BOLD_PATH, 80)
-    f_label = ImageFont.truetype(FONT_BOLD_PATH, 36)
-    f_datetime = ImageFont.truetype(FONT_BOLD_PATH, 32)
-    f_badge = ImageFont.truetype(FONT_BOLD_PATH, 54)
+    f_price = ImageFont.truetype(FONT_BOLD_PATH, 84)
+    f_karat = ImageFont.truetype(FONT_BOLD_PATH, 32)
+    f_datetime = ImageFont.truetype(FONT_REGULAR_PATH, 26)
+
+    def text_rtl(xy, text, font, fill, anchor="mm"):
+        draw_rtl(d, xy, text, font, fill, anchor)
+
+    outer_margin = 20
+    d.rounded_rectangle(
+        (outer_margin, outer_margin, W - outer_margin, H - outer_margin),
+        radius=24, outline=GOLD, width=3
+    )
+
+    now = datetime.now(ZoneInfo("Africa/Cairo"))
+    date_str = f"{now.day} {ARABIC_MONTHS[now.month]}"
+    hour12 = now.strftime("%I:%M").replace(":", "،")
+    ampm = "م" if now.strftime("%p") == "PM" else "ص"
+    time_str = f"{hour12} {ampm}"
+
+    center_x = W // 2
+    box_half_width = 280
+
+    top_y = H // 2 - 100
+    text_rtl((center_x - box_half_width + 90, top_y), date_str, f_datetime, WHITE, anchor="lm")
+    text_rtl((center_x + box_half_width - 90, top_y), time_str, f_datetime, WHITE, anchor="rm")
+
+    price_y = H // 2 + 15
+    text_rtl((center_x, price_y), f"{prices['21']} جنيه", f_price, GOLD_LIGHT)
+
+    badge_y = H // 2 + 105
+    badge_w, badge_h = 130, 50
+    d.ellipse(
+        (center_x - badge_w // 2, badge_y - badge_h // 2,
+         center_x + badge_w // 2, badge_y + badge_h // 2),
+        fill=GOLD,
+    )
+    text_rtl((center_x, badge_y), "عيار 21", f_karat, (20, 15, 5))
+
+    return img
 
     def text_rtl(xy, text, font, fill, anchor="mm"):
         draw_rtl(d, xy, text, font, fill, anchor)
