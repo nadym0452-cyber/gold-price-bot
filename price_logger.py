@@ -7,9 +7,14 @@ HISTORY_FILE = "price_history.json"
 
 
 def fetch_gold_price_usd():
-    resp = requests.get("https://api.gold-api.com/price/XAU", timeout=30)
+    resp = requests.get(
+        "https://api.goldprice.dev/v1/prices?symbol=XAU-USD-SPOT",
+        headers={"User-Agent": "Mozilla/5.0"},
+        timeout=30,
+    )
     resp.raise_for_status()
-    return resp.json()["price"]
+    data = resp.json()
+    return float(data["symbols"][0]["price"])
 
 
 def fetch_usd_to_egp():
