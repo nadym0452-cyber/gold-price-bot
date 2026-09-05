@@ -1,6 +1,7 @@
 import sqlite3
 import os
 from datetime import datetime
+from github_sync import download_db, upload_db
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "shops.db")
 
@@ -12,6 +13,9 @@ def get_connection():
 
 
 def init_db():
+    if not os.path.exists(DB_PATH):
+        download_db(DB_PATH)
+
     conn = get_connection()
     conn.execute("""
         CREATE TABLE IF NOT EXISTS shops (
@@ -80,6 +84,7 @@ def add_shop(shop_name, governorate, city, address="", phone="", whatsapp="",
           maps_url, source_url, status, datetime.now().strftime("%Y-%m-%d"), notes))
     conn.commit()
     conn.close()
+    upload_db(DB_PATH)
 
 
 def get_cities(governorate, verified_only=True):
@@ -104,6 +109,41 @@ def get_shops(governorate, city, verified_only=True):
     rows = conn.execute(query, params).fetchall()
     conn.close()
     return rows
+
+
+def get_shops_paginated(governorate, city, page=0, verified_only=True):
+    SHOPS_PER_PAGE = 5
+    conn = get_connection()
+    query = "SELECT * FROM shops WHERE governorate = ? AND city = ?"
+    params = [governorate, city]
+    if verified_only:
+        query += " AND status = 'Verified'"
+    query += " ORDER BY shop_name"
+    all_rows = conn.execute(query, params).fetchall()
+    conn.close()
+
+    start = page * SHOPS_PER_PAGE
+    end = start + SHOPS_PER_PAGE
+    total_pages = max(1, (len(all_rows) + SHOPS_PER_PAGE - 1) // SHOPS_PER_PAGE)
+    return all_rows[start:end], total_pages
+
+
+def search_shops_paginated(keyword, page=0):
+    SHOPS_PER_PAGE = 5
+    conn = get_connection()
+    pattern = f"%{keyword.strip()}%"
+    all_rows = conn.execute("""
+        SELECT * FROM shops
+        WHERE status = 'Verified'
+        AND (shop_name LIKE ? OR city LIKE ? OR governorate LIKE ?)
+        ORDER BY shop_name
+    """, (pattern, pattern, pattern)).fetchall()
+    conn.close()
+
+    start = page * SHOPS_PER_PAGE
+    end = start + SHOPS_PER_PAGE
+    total_pages = max(1, (len(all_rows) + SHOPS_PER_PAGE - 1) // SHOPS_PER_PAGE)
+    return all_rows[start:end], total_pages
 
 
 def get_shop_by_id(shop_id):
@@ -137,48 +177,4 @@ def update_shop_status(shop_id, status):
     conn.execute("UPDATE shops SET status = ? WHERE id = ?", (status, shop_id))
     conn.commit()
     conn.close()
-def search_shops(keyword):
-    conn = get_connection()
-    pattern = f"%{keyword.strip()}%"
-    rows = conn.execute("""
-        SELECT * FROM shops
-        WHERE status = 'Verified'
-        AND (shop_name LIKE ? OR city LIKE ? OR governorate LIKE ?)
-        ORDER BY shop_name
-    """, (pattern, pattern, pattern)).fetchall()
-    conn.close()
-    return rows
-SHOPS_PER_PAGE = 5
-
-
-def get_shops_paginated(governorate, city, page=0, verified_only=True):
-    conn = get_connection()
-    query = "SELECT * FROM shops WHERE governorate = ? AND city = ?"
-    params = [governorate, city]
-    if verified_only:
-        query += " AND status = 'Verified'"
-    query += " ORDER BY shop_name"
-    all_rows = conn.execute(query, params).fetchall()
-    conn.close()
-
-    start = page * SHOPS_PER_PAGE
-    end = start + SHOPS_PER_PAGE
-    total_pages = max(1, (len(all_rows) + SHOPS_PER_PAGE - 1) // SHOPS_PER_PAGE)
-    return all_rows[start:end], total_pages
-
-
-def search_shops_paginated(keyword, page=0):
-    conn = get_connection()
-    pattern = f"%{keyword.strip()}%"
-    all_rows = conn.execute("""
-        SELECT * FROM shops
-        WHERE status = 'Verified'
-        AND (shop_name LIKE ? OR city LIKE ? OR governorate LIKE ?)
-        ORDER BY shop_name
-    """, (pattern, pattern, pattern)).fetchall()
-    conn.close()
-
-    start = page * SHOPS_PER_PAGE
-    end = start + SHOPS_PER_PAGE
-    total_pages = max(1, (len(all_rows) + SHOPS_PER_PAGE - 1) // SHOPS_PER_PAGE)
-    return all_rows[start:end], total_pages
+    upload_db(DB_PATH)
